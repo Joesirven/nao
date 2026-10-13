@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, Fragment, useContext, useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { trpc } from '../main';
 import { InputGroup } from './ui/input-group';
@@ -34,6 +34,8 @@ interface AuthFormProps {
 	serverError?: string;
 	displaySocialProviders?: boolean;
 	socialCallbackUrl?: string;
+	iapSignIn?: React.ReactNode;
+	isIapSignInPending?: boolean;
 	displayEmailPasswordForm?: boolean;
 	emailPasswordDisabledMessage?: string;
 	footer?: React.ReactNode;
@@ -47,6 +49,8 @@ export function AuthForm({
 	serverError,
 	displaySocialProviders,
 	socialCallbackUrl,
+	iapSignIn,
+	isIapSignInPending = false,
 	displayEmailPasswordForm = true,
 	emailPasswordDisabledMessage,
 	footer,
@@ -68,6 +72,7 @@ export function AuthForm({
 	const [isEmailFormExpanded, setIsEmailFormExpanded] = useState(lastSignInMethod === 'email');
 
 	const socialProviders = [
+		iapSignIn && <Fragment key='iap'>{iapSignIn}</Fragment>,
 		isGoogleSetup.data && (
 			<AuthSocialButton
 				key='google'
@@ -124,7 +129,8 @@ export function AuthForm({
 
 	const areSocialProvidersPending = Boolean(
 		displaySocialProviders &&
-		(isGoogleSetup.isPending ||
+		(isIapSignInPending ||
+			isGoogleSetup.isPending ||
 			isGithubSetup.isPending ||
 			isGitlabSetup.isPending ||
 			isMicrosoftSetupPending ||

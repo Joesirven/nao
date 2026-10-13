@@ -4,8 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { signIn } from '@/lib/auth-client';
 import { AuthForm, FormTextField } from '@/components/auth-form';
+import { IapSignInButton } from '@/components/auth-iap-button';
+import { useIapStatus } from '@/hooks/use-iap-status';
 import { useIsCloud } from '@/hooks/use-nao-mode';
-import { rememberSignInMethod } from '@/lib/last-sign-in-method';
+import { loadLastSignInMethod, rememberSignInMethod } from '@/lib/last-sign-in-method';
 import { getSafeRedirectPath } from '@/lib/safe-redirect';
 import { trpc } from '@/main';
 
@@ -35,9 +37,17 @@ function Login() {
 	const isCloud = useIsCloud();
 	const isUserLoginEnabled = config.data?.enableUserLogin;
 	const isUserSignupEnabled = config.data?.enableUserSignup;
+	const iapStatus = useIapStatus();
+	const iapEmail = iapStatus.data?.email;
+	const hidesPasswordLogin = Boolean(iapEmail && iapStatus.data?.hidePasswordLogin);
 
 	const oauthAuthorizeUrl = buildOAuthAuthorizeUrl();
 	const safeRedirect = getSafeRedirectPath(redirect);
+
+	const completeIapSignIn = () => {
+		rememberSignInMethod('iap');
+		window.location.assign(oauthAuthorizeUrl ?? safeRedirect ?? '/');
+	};
 
 	const form = useForm({
 		defaultValues: { email: '', password: '' },
@@ -70,8 +80,24 @@ function Login() {
 			serverError={serverError}
 			displaySocialProviders={true}
 			socialCallbackUrl={oauthAuthorizeUrl ?? safeRedirect ?? undefined}
-			displayEmailPasswordForm={isUserLoginEnabled}
-			emailPasswordDisabledMessage='Email and password login is disabled. Use a configured sign-in provider to continue.'
+			iapSignIn={
+				iapEmail ? (
+					<IapSignInButton
+						email={iapEmail}
+						label={iapStatus.data?.buttonLabel ?? null}
+						onSignedIn={completeIapSignIn}
+						onError={setServerError}
+						lastUsed={loadLastSignInMethod() === 'iap'}
+					/>
+				) : undefined
+			}
+			isIapSignInPending={iapStatus.isPending}
+			displayEmailPasswordForm={isUserLoginEnabled && !hidesPasswordLogin}
+			emailPasswordDisabledMessage={
+				hidesPasswordLogin
+					? undefined
+					: 'Email and password login is disabled. Use a configured sign-in provider to continue.'
+			}
 			footer={
 				isCloud && isUserSignupEnabled ? (
 					<>

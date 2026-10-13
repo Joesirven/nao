@@ -31,6 +31,14 @@ beforeEach(() => {
 });
 
 describe('initializeSelfHostedUserAfterCreation', () => {
+	it('leaves Identity-Aware Proxy users to their own provisioning so the first one is not made administrator', async () => {
+		await initializeSelfHostedUserAfterCreation('user-1', 'iap', true);
+
+		expect(mocks.initializeDefaultOrganization).not.toHaveBeenCalled();
+		expect(mocks.addDefaultOrganization).not.toHaveBeenCalled();
+		expect(mocks.addDefaultProject).not.toHaveBeenCalled();
+	});
+
 	it('adds a new OIDC user only to the default organization', async () => {
 		mocks.isOidc.mockReturnValue(true);
 

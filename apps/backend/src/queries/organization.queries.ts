@@ -294,7 +294,10 @@ export const initializeDefaultOrganizationForFirstUser = async (userId: string):
 	});
 };
 
-export const addUserToDefaultOrganizationIfExists = async (userId: string): Promise<void> => {
+export const addUserToDefaultOrganizationIfExists = async (
+	userId: string,
+	role: OrgRole = env.DEFAULT_USER_ROLE,
+): Promise<void> => {
 	const existingMembership = await getUserOrgMembership(userId);
 	if (existingMembership) {
 		return;
@@ -308,7 +311,7 @@ export const addUserToDefaultOrganizationIfExists = async (userId: string): Prom
 	await addOrgMemberIfMissing({
 		orgId: org.id,
 		userId,
-		role: env.DEFAULT_USER_ROLE,
+		role,
 	});
 };
 
@@ -317,7 +320,10 @@ export const addUserToDefaultOrganizationIfExists = async (userId: string): Prom
  * Called when a new user signs up.
  * Idempotent: safe to call multiple times for the same user.
  */
-export const addUserToDefaultProjectIfExists = async (userId: string): Promise<void> => {
+export const addUserToDefaultProjectIfExists = async (
+	userId: string,
+	role: OrgRole = env.DEFAULT_USER_ROLE,
+): Promise<void> => {
 	const org = await getFirstOrganization();
 	if (!org) {
 		return;
@@ -327,8 +333,6 @@ export const addUserToDefaultProjectIfExists = async (userId: string): Promise<v
 	if (!project) {
 		return;
 	}
-
-	const role = env.DEFAULT_USER_ROLE;
 
 	await db.transaction(async (tx) => {
 		const existingOrgMember = await tx.query.orgMember.findFirst({

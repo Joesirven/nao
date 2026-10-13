@@ -23,6 +23,9 @@ import { initializeSelfHostedUserAfterCreation } from './services/auth-user-onbo
 import { emailService } from './services/email';
 import { githubOAuthConfig } from './services/github';
 import * as gitlabService from './services/gitlab';
+import { getIapConfig, iapAuth } from './services/iap-auth.service';
+import { getGoogleIapKeySet } from './services/iap-token.service';
+import { mayCreateIapUser, syncIapUserMembership } from './services/iap-user-provisioning.service';
 import { hasFeature, LICENSE_FEATURES } from './services/license.service';
 import {
 	augmentSocialProvidersWithMicrosoft,
@@ -225,6 +228,12 @@ async function createAuthInstance(baseURL: string) {
 				allowDynamicClientRegistration: true,
 				allowUnauthenticatedClientRegistration: env.ALLOW_UNAUTHENTICATED_DCR,
 				validAudiences: MCP_VALID_AUDIENCES,
+			}),
+			iapAuth({
+				config: getIapConfig(),
+				keySet: getGoogleIapKeySet(),
+				mayCreateUser: mayCreateIapUser,
+				afterSignIn: syncIapUserMembership,
 			}),
 			...ssoPlugins,
 		],

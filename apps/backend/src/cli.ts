@@ -10,7 +10,6 @@
 
 import './env';
 
-import { hashPassword } from 'better-auth/crypto';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -18,8 +17,7 @@ import path from 'path';
 import { startServer } from './app';
 import dbConfig, { Dialect } from './db/dbConfig';
 import { runMigrations } from './db/migrate';
-import * as accountQueries from './queries/account.queries';
-import * as userQueries from './queries/user.queries';
+import { resetLocalPassword } from './services/password-reset.service';
 
 const SECRET_FILE_NAME = '.nao-secret';
 
@@ -231,24 +229,15 @@ async function runResetPassword(options: Record<string, string>): Promise<void> 
 		process.exit(1);
 	}
 
-	const user = (await userQueries.getUser({ email })) ?? (await userQueries.getUser({ email: email.toLowerCase() }));
-	if (!user) {
+	const reset = await resetLocalPassword(email);
+	if (reset.status === 'user_not_found') {
 		console.error(`❌ No user found with email "${email}"`);
 		process.exit(1);
 	}
 
-	const account = await accountQueries.getAccountById(user.id);
-	if (!account?.password) {
-		console.error(`❌ ${user.email} signs in via SSO/OAuth and has no password to reset.`);
-		process.exit(1);
-	}
-
-	const temporaryPassword = crypto.randomBytes(12).toString('base64url');
-	const hashedPassword = await hashPassword(temporaryPassword);
-	await accountQueries.updateAccountPassword(account.id, hashedPassword, user.id);
-
-	console.log(`\n✓ Password reset for ${user.email}`);
-	console.log(`   Temporary password: ${temporaryPassword}`);
+	const action = reset.status === 'created' ? 'Password created' : 'Password reset';
+	console.log(`\n✓ ${action} for ${reset.email}`);
+	console.log(`   Temporary password: ${reset.temporaryPassword}`);
 	console.log(`   You'll be prompted to choose a new password after logging in.\n`);
 	process.exit(0);
 }

@@ -58,6 +58,22 @@ export const hasAccountForProvider = async (userId: string, providerId: string):
 	return !!account;
 };
 
+export const createCredentialAccount = async (userId: string, hashedPassword: string): Promise<void> => {
+	await db.transaction(async (tx) => {
+		await tx
+			.insert(s.account)
+			.values({
+				id: crypto.randomUUID(),
+				userId,
+				accountId: userId,
+				providerId: CREDENTIAL_PROVIDER_ID,
+				password: hashedPassword,
+			})
+			.execute();
+		await tx.update(s.user).set({ requiresPasswordReset: true }).where(eq(s.user.id, userId)).execute();
+	});
+};
+
 export const updateAccountPassword = async (
 	accountId: string,
 	hashedPassword: string,

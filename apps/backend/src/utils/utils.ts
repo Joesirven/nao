@@ -166,12 +166,18 @@ export const isEmailDomainAllowed = (userEmail: string, authDomains?: string) =>
 	return true;
 };
 
+export const IAP_PROVIDER_ID = 'iap';
+export const IAP_SIGN_IN_PATH = '/iap/sign-in';
+
 /**
  * Resolve the auth provider ID from the better-auth callback context.
- * Social providers use `params.id`, the genericOAuth plugin (OIDC) uses `params.providerId`.
+ * Social providers use `params.id`, the genericOAuth plugin (OIDC) uses `params.providerId`,
+ * and Identity-Aware Proxy sign-in is recognised by its endpoint path.
  */
-export function resolveProviderId(ctx?: { params?: Record<string, string | undefined> } | null): string | undefined {
-	return ctx?.params?.id ?? ctx?.params?.providerId;
+export function resolveProviderId(
+	ctx?: { params?: Record<string, string | undefined>; path?: string } | null,
+): string | undefined {
+	return ctx?.params?.id ?? ctx?.params?.providerId ?? (ctx?.path === IAP_SIGN_IN_PATH ? IAP_PROVIDER_ID : undefined);
 }
 
 export const regexPassword = /^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/;

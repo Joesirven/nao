@@ -69,4 +69,12 @@ describe('resolveProviderId', () => {
 	it('returns undefined when params is empty', () => {
 		expect(resolveProviderId({ params: {} })).toBeUndefined();
 	});
+
+	it('recognises Identity-Aware Proxy sign-in by its endpoint path', () => {
+		expect(resolveProviderId({ params: {}, path: '/iap/sign-in' })).toBe('iap');
+	});
+
+	it('does not treat other endpoint paths as a provider', () => {
+		expect(resolveProviderId({ params: {}, path: '/get-session' })).toBeUndefined();
+	});
 });

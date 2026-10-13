@@ -1,4 +1,4 @@
-export const SIGN_IN_METHODS = ['email', 'google', 'github', 'gitlab', 'microsoft', 'oidc'] as const;
+export const SIGN_IN_METHODS = ['email', 'google', 'github', 'gitlab', 'microsoft', 'oidc', 'iap'] as const;
 
 export type SignInMethod = (typeof SIGN_IN_METHODS)[number];
 

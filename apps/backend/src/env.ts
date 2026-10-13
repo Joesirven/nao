@@ -197,6 +197,33 @@ const baseRawEnvSchema = z.object({
 		}),
 	SSO_SESSION_MAX_AGE: z.coerce.number().int().positive().optional(),
 
+	/**
+	 * Google Identity-Aware Proxy sign-in. Enabled only when both the signed header audience and the
+	 * allowed email domains are set; see docs/auth-iap.md.
+	 */
+	NAO_IAP_AUDIENCE: z
+		.string()
+		.optional()
+		.transform((val) => val?.trim() || undefined),
+	NAO_IAP_ALLOWED_DOMAINS: z
+		.string()
+		.optional()
+		.transform((val) => val?.trim() || undefined),
+	NAO_IAP_ADMIN_EMAILS: z
+		.string()
+		.optional()
+		.transform((val) => val?.trim() || undefined),
+	NAO_IAP_DEFAULT_ROLE: z.enum(['admin', 'user', 'viewer']).default('viewer'),
+	NAO_IAP_BUTTON_LABEL: z
+		.string()
+		.optional()
+		.transform((val) => val?.trim() || undefined),
+	NAO_IAP_HIDE_PASSWORD_LOGIN: z
+		.enum(['true', 'false'])
+		.optional()
+		.default('true')
+		.transform((val) => val === 'true'),
+
 	SMTP_PASSWORD: z.string().optional(),
 	SMTP_HOST: z.string().optional(),
 	SMTP_PORT: z.string().optional(),
