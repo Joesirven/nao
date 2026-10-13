@@ -57,7 +57,7 @@ The audience depends on what IAP protects:
 
 ## Sign-out
 
-Signing out of nao ends the nao session and returns the user to the login page. The page shows the IAP button again but never signs in by itself, so there is no sign-out loop. To also end the IAP session, for example on a shared computer, open `https://YOUR_APP_URL/?gcp-iap-mode=CLEAR_LOGIN_COOKIE`. This clears IAP's cookies. Google may sign the user back in silently if only one Google account is in use ([IAP special URLs](https://docs.cloud.google.com/iap/docs/special-urls-howto)).
+Signing out of nao ends the nao session and returns the user to the login page. The page shows the IAP button again but never signs in by itself, so there is no sign-out loop. To also end the IAP session, for example on a shared computer, open `https://YOUR_APP_URL/?gcp-iap-mode=CLEAR_LOGIN_COOKIE`. This clears IAP's cookies. Google may sign the user back in silently if only one Google account is in use ([IAP special URLs](https://docs.cloud.google.com/iap/docs/special-urls-howto)). Google documents this URL for IAP in general; the page does not say whether it applies to IAP enabled directly on a Cloud Run service, so confirm it on your deployment.
 
 If a different person later passes IAP in the same browser while the earlier nao session is still active, that nao session stays active until it expires or the earlier user signs out.
 
@@ -69,7 +69,7 @@ If a different person later passes IAP in the same browser while the earlier nao
 
 ## Checking a deployment
 
-IAP can replace the header with a deliberately broken token ([IAP special URLs](https://docs.cloud.google.com/iap/docs/special-urls-howto)). While signed in through IAP, open the status endpoint with each test type. A correct deployment returns `"email": null` for every broken token, and your email without the test parameters:
+IAP can replace the header with a deliberately broken token ([IAP special URLs](https://docs.cloud.google.com/iap/docs/special-urls-howto)). Google documents these test modes for IAP in general but not specifically for IAP enabled directly on a Cloud Run service. First confirm that IAP honours them on your deployment: with a test type set, the response should differ from the plain request. A status of `"email": null` only proves something when IAP really sent a broken token. While signed in through IAP, open the status endpoint with each test type. A correct deployment returns `"email": null` for every broken token, and your email without the test parameters:
 
 ```
 https://YOUR_APP_URL/api/auth/iap/status

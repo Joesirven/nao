@@ -46,6 +46,12 @@ describe('verifyIapAssertion', () => {
 		});
 	});
 
+	it('rejects an audience list that merely contains the expected audience', async () => {
+		const token = await fixture.signToken({ audience: [TEST_IAP_AUDIENCE, 'another-audience'] });
+
+		await expect(verify(token)).resolves.toEqual({ verified: false, reason: 'audience_not_exact' });
+	});
+
 	it('rejects a wrong issuer', async () => {
 		const token = await fixture.signToken({ issuer: 'https://accounts.google.com' });
 

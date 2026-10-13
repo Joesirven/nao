@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { iapAuth, type IapConfig } from '../src/services/iap-auth.service';
+import { resolveProviderId } from '../src/utils/utils';
 import { createIapTokenFixture, type IapTokenFixture, TEST_IAP_AUDIENCE } from './helpers/iap-token-fixture';
 
 const BASE_URL = 'http://localhost:3000';
@@ -21,6 +22,7 @@ const hooks = {
 };
 
 let fixture: IapTokenFixture;
+let hookProviderIds: Array<[string, string | undefined]> = [];
 
 beforeAll(async () => {
 	fixture = await createIapTokenFixture();
@@ -29,6 +31,7 @@ beforeAll(async () => {
 beforeEach(() => {
 	hooks.mayCreateUser.mockReset().mockResolvedValue(true);
 	hooks.afterSignIn.mockReset().mockResolvedValue(undefined);
+	hookProviderIds = [];
 });
 
 async function createAuth(config: IapConfig | null = ENABLED_CONFIG) {
@@ -39,6 +42,22 @@ async function createAuth(config: IapConfig | null = ENABLED_CONFIG) {
 		emailAndPassword: { enabled: true },
 		rateLimit: { enabled: false },
 		advanced: { disableOriginCheck: false },
+		databaseHooks: {
+			user: {
+				create: {
+					after: async (_user: unknown, ctx: Parameters<typeof resolveProviderId>[0]) => {
+						hookProviderIds.push(['user.create', resolveProviderId(ctx)]);
+					},
+				},
+			},
+			session: {
+				create: {
+					after: async (_session: unknown, ctx: Parameters<typeof resolveProviderId>[0]) => {
+						hookProviderIds.push(['session.create', resolveProviderId(ctx)]);
+					},
+				},
+			},
+		},
 		plugins: [
 			iapAuth({
 				config,
@@ -154,6 +173,17 @@ describe('Identity-Aware Proxy sign-in endpoint', () => {
 			email: 'alice@example.com',
 			isNewUser: true,
 		});
+	});
+
+	it('lets nao database hooks recognise the user and session as created through the proxy', async () => {
+		const { auth } = await createAuth();
+
+		await requestSignIn(auth, { 'x-goog-iap-jwt-assertion': await fixture.signToken() });
+
+		expect(hookProviderIds).toEqual([
+			['user.create', 'iap'],
+			['session.create', 'iap'],
+		]);
 	});
 
 	it('signs a returning user into the same account', async () => {

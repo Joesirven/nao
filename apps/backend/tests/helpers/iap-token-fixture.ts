@@ -16,7 +16,7 @@ export interface IapTokenOverrides {
 	claims?: JWTPayload & Record<string, unknown>;
 	issuedAt?: number;
 	expiresAt?: number;
-	audience?: string;
+	audience?: string | string[];
 	issuer?: string;
 }
 

@@ -59,6 +59,9 @@ export async function verifyIapAssertion(
 		return { verified: false, reason: describeVerificationError(error) };
 	}
 
+	if (payload.aud !== options.audience) {
+		return { verified: false, reason: 'audience_not_exact' };
+	}
 	return checkIdentityClaims(payload, options.allowedDomains);
 }
 
