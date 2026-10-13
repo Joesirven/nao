@@ -106,16 +106,117 @@ def test_list_tables_escapes_a_quote_in_the_schema_name():
     assert "table_schema = 'we''ird'" in cursor.execute.call_args.args[0]
 
 
+def test_table_comments_issue_one_query_for_the_whole_schema():
+    """v_catalog.comments pays a flat, cluster-wide cost per call, so a 20-table
+    sync issuing it once per table rather than once per schema costs half an hour
+    of nothing but metadata."""
+    backend, cursor = _backend_returning(
+        [
+            ("TABLE", "users", None, "Registered user accounts"),
+            ("COLUMN", "users", "email", "User email address"),
+            ("TABLE", "orders", None, "Customer orders"),
+        ]
+    )
+
+    assert backend.table_comments("marts") == {"users": "Registered user accounts", "orders": "Customer orders"}
+    assert backend.table_comments("marts") == {"users": "Registered user accounts", "orders": "Customer orders"}
+
+    assert cursor.execute.call_count == 1
+    sql = " ".join(cursor.execute.call_args.args[0].split())
+    assert "FROM v_catalog.comments" in sql
+    assert "object_schema = 'marts'" in sql
+
+
+def test_column_comments_share_the_table_comments_cache():
+    backend, cursor = _backend_returning(
+        [
+            ("TABLE", "users", None, "Registered user accounts"),
+            ("COLUMN", "users", "email", "User email address"),
+        ]
+    )
+
+    assert backend.column_comments("marts", "users") == {"email": "User email address"}
+    assert backend.table_comments("marts") == {"users": "Registered user accounts"}
+
+    assert cursor.execute.call_count == 1
+
+
+def test_comments_do_not_requery_for_a_second_table_in_the_same_schema():
+    backend, cursor = _backend_returning([("TABLE", "users", None, "Registered user accounts")])
+
+    backend.table_comments("marts")
+    backend.column_comments("marts", "users")
+    backend.column_comments("marts", "orders")
+
+    assert cursor.execute.call_count == 1
+
+
+def test_comments_requery_for_a_different_schema():
+    backend, cursor = _backend_returning([("TABLE", "users", None, "Registered user accounts")])
+
+    backend.table_comments("marts")
+    backend.table_comments("analytics")
+
+    assert cursor.execute.call_count == 2
+
+
+def test_comments_fetch_failure_is_cached_as_empty_rather_than_retried():
+    backend, cursor = _backend_returning([])
+    cursor.execute.side_effect = RuntimeError("catalog unavailable")
+
+    assert backend.table_comments("marts") == {}
+    assert backend.column_comments("marts", "users") == {}
+
+    assert cursor.execute.call_count == 1
+
+
+def test_clustering_columns_issue_one_query_for_the_whole_schema():
+    backend, cursor = _backend_returning(
+        [
+            ("users", "id", 1),
+            ("users", "created_at", 2),
+            ("orders", "id", 1),
+        ]
+    )
+
+    assert backend.clustering_columns("marts", "users") == ["id", "created_at"]
+    assert backend.clustering_columns("marts", "orders") == ["id"]
+
+    assert cursor.execute.call_count == 1
+    sql = " ".join(cursor.execute.call_args.args[0].split())
+    assert "FROM v_catalog.projection_columns" in sql
+    assert "JOIN v_catalog.projections" in sql
+    assert "table_schema = 'marts'" in sql
+
+
+def test_clustering_columns_do_not_requery_for_a_second_table_in_the_same_schema():
+    backend, cursor = _backend_returning([("users", "id", 1)])
+
+    backend.clustering_columns("marts", "users")
+    backend.clustering_columns("marts", "orders")
+
+    assert cursor.execute.call_count == 1
+
+
+def test_clustering_columns_fetch_failure_is_cached_as_empty_rather_than_retried():
+    backend, cursor = _backend_returning([])
+    cursor.execute.side_effect = RuntimeError("catalog unavailable")
+
+    assert backend.clustering_columns("marts", "users") == []
+    assert backend.clustering_columns("marts", "orders") == []
+
+    assert cursor.execute.call_count == 1
+
+
 def test_columns_reads_both_table_and_view_catalogs_and_attaches_comments():
     conn = MagicMock()
-    comment_cursor = MagicMock()
-    comment_cursor.fetchall.return_value = [("email", "User email address")]
+    conn.column_comments.return_value = {"email": "User email address"}
     column_cursor = MagicMock()
     column_cursor.fetchall.return_value = [
         ("id", "int", False, 1),
         ("email", "varchar(255)", True, 2),
     ]
-    conn.raw_sql.side_effect = [comment_cursor, column_cursor]
+    conn.raw_sql.return_value = column_cursor
 
     context = VerticaDatabaseContext(conn, "marts", "users")
 
@@ -123,26 +224,34 @@ def test_columns_reads_both_table_and_view_catalogs_and_attaches_comments():
         {"name": "id", "type": "int NOT NULL", "nullable": False, "description": None},
         {"name": "email", "type": "varchar(255)", "nullable": True, "description": "User email address"},
     ]
-    column_sql = " ".join(conn.raw_sql.call_args_list[1].args[0].split())
+    conn.column_comments.assert_called_once_with("marts", "users")
+    column_sql = " ".join(conn.raw_sql.call_args.args[0].split())
     assert "FROM v_catalog.columns" in column_sql
     assert "FROM v_catalog.view_columns" in column_sql
 
 
 def test_description_reads_the_table_comment():
-    conn = _conn_returning([("Registered user accounts",)])
+    conn = MagicMock()
+    conn.table_comments.return_value = {"users": "Registered user accounts"}
     context = VerticaDatabaseContext(conn, "marts", "users")
 
     assert context.description() == "Registered user accounts"
-    sql = " ".join(conn.raw_sql.call_args.args[0].split())
-    assert "FROM v_catalog.comments" in sql
-    assert "object_type = 'TABLE'" in sql
+    conn.table_comments.assert_called_once_with("marts")
 
 
-def test_description_is_none_when_the_catalog_query_fails():
+def test_description_is_none_when_the_table_has_no_comment():
     conn = MagicMock()
-    conn.raw_sql.side_effect = RuntimeError("catalog unavailable")
+    conn.table_comments.return_value = {}
 
     assert VerticaDatabaseContext(conn, "marts", "users").description() is None
+
+
+def test_clustering_columns_delegates_to_the_backends_schema_wide_cache():
+    conn = MagicMock()
+    conn.clustering_columns.return_value = ["id", "created_at"]
+
+    assert VerticaDatabaseContext(conn, "marts", "users").clustering_columns() == ["id", "created_at"]
+    conn.clustering_columns.assert_called_once_with("marts", "users")
 
 
 def test_identifiers_are_double_quoted_and_escaped():
@@ -162,11 +271,10 @@ def test_complex_types_are_stringified_with_to_json():
 
 def test_exclude_columns_hide_columns_from_the_context():
     conn = MagicMock()
-    comment_cursor = MagicMock()
-    comment_cursor.fetchall.return_value = []
+    conn.column_comments.return_value = {}
     column_cursor = MagicMock()
     column_cursor.fetchall.return_value = [("id", "int", False, 1), ("email", "varchar(255)", True, 2)]
-    conn.raw_sql.side_effect = [comment_cursor, column_cursor]
+    conn.raw_sql.return_value = column_cursor
 
     config = _config(exclude_columns=["*.*.email"])
     context = config.create_context(conn, "marts", "users")

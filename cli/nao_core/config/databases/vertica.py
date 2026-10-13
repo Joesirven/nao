@@ -40,11 +40,22 @@ class VerticaBackend:
     the sync pipeline calls: ``raw_sql``, ``list_databases``, ``list_tables`` and
     ``disconnect``. ``VerticaDatabaseContext`` overrides every context method
     that would otherwise need an Ibis table expression.
+
+    One backend instance lives for the whole sync run, so ``table_comments``,
+    ``column_comments`` and ``clustering_columns`` cache their schema-wide query
+    on it: ``v_catalog.comments`` and the ``v_catalog.projection_columns`` join to
+    ``v_catalog.projections`` each pay a flat, cluster-wide cost of around 30
+    seconds per call regardless of how selective the filter is, unlike
+    ``v_catalog.tables``, ``columns`` and ``view_columns``, which return
+    instantly. Issued once per table instead of once per schema, that flat cost
+    turns a 20-table sync into roughly half an hour of nothing but metadata.
     """
 
     def __init__(self, conn: Connection, default_schema: str) -> None:
         self._conn = conn
         self._default_schema = default_schema
+        self._comments_cache: dict[str, tuple[dict[str, str], dict[str, dict[str, str]]]] = {}
+        self._clustering_cache: dict[str, dict[str, list[str]]] = {}
 
     def raw_sql(self, sql: str):
         cursor = self._conn.cursor()
@@ -69,6 +80,59 @@ class VerticaBackend:
     def disconnect(self) -> None:
         self._conn.close()
 
+    def table_comments(self, schema: str) -> dict[str, str]:
+        """Table-level comments for every table in a schema, fetched once."""
+        return self._schema_comments(schema)[0]
+
+    def column_comments(self, schema: str, table: str) -> dict[str, str]:
+        """Column comments for one table, from a schema-wide cache fetched once."""
+        return self._schema_comments(schema)[1].get(table, {})
+
+    def _schema_comments(self, schema: str) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+        if schema not in self._comments_cache:
+            tables: dict[str, str] = {}
+            columns: dict[str, dict[str, str]] = {}
+            try:
+                rows = self.raw_sql(
+                    "SELECT object_type, object_name, child_object, comment FROM v_catalog.comments "
+                    f"WHERE object_schema = '{_quote_literal(schema)}' AND object_type IN ('TABLE', 'COLUMN')"
+                ).fetchall()
+            except Exception:
+                rows = []
+            for object_type, object_name, child_object, comment in rows:
+                comment = str(comment).strip() if comment else ""
+                if not comment:
+                    continue
+                if object_type == "TABLE":
+                    tables[str(object_name)] = comment
+                elif object_type == "COLUMN" and child_object:
+                    columns.setdefault(str(object_name), {})[str(child_object)] = comment
+            self._comments_cache[schema] = (tables, columns)
+        return self._comments_cache[schema]
+
+    def clustering_columns(self, schema: str, table: str) -> list[str]:
+        """The super projection's ORDER BY columns for one table, Vertica's sort key."""
+        return self._schema_clustering_columns(schema).get(table, [])
+
+    def _schema_clustering_columns(self, schema: str) -> dict[str, list[str]]:
+        if schema not in self._clustering_cache:
+            per_table: dict[str, list[str]] = {}
+            try:
+                rows = self.raw_sql(
+                    "SELECT DISTINCT pc.table_name, pc.table_column_name, pc.sort_position "
+                    "FROM v_catalog.projection_columns pc "
+                    "JOIN v_catalog.projections p ON p.projection_id = pc.projection_id "
+                    f"WHERE pc.table_schema = '{_quote_literal(schema)}' "
+                    "AND p.is_super_projection AND pc.sort_position IS NOT NULL "
+                    "ORDER BY pc.table_name, pc.sort_position"
+                ).fetchall()
+            except Exception:
+                rows = []
+            for table_name, column_name, _sort_position in rows:
+                per_table.setdefault(str(table_name), []).append(str(column_name))
+            self._clustering_cache[schema] = per_table
+        return self._clustering_cache[schema]
+
 
 class VerticaDatabaseContext(DatabaseContext):
     """Vertica context reading metadata from the v_catalog system schema."""
@@ -89,19 +153,7 @@ class VerticaDatabaseContext(DatabaseContext):
         return self._filter_excluded_columns(self._columns_cache)
 
     def description(self) -> str | None:
-        query = (
-            "SELECT comment FROM v_catalog.comments "
-            "WHERE object_type = 'TABLE' "
-            f"AND object_schema = '{_quote_literal(self._schema)}' "
-            f"AND object_name = '{_quote_literal(self._table_name)}'"
-        )
-        try:
-            row = self._fetchone(self._conn.raw_sql(query))  # type: ignore[union-attr]
-        except Exception:
-            return None
-        if row and row[0]:
-            return str(row[0]).strip() or None
-        return None
+        return self._conn.table_comments(self._schema).get(self._table_name)  # type: ignore[union-attr]
 
     def row_count(self) -> int:
         if self._row_count_cache is None:
@@ -128,20 +180,8 @@ class VerticaDatabaseContext(DatabaseContext):
 
     def clustering_columns(self) -> list[str]:
         """Return the super projection's ORDER BY columns, Vertica's sort key."""
-        query = (
-            "SELECT DISTINCT pc.table_column_name, pc.sort_position "
-            "FROM v_catalog.projection_columns pc "
-            "JOIN v_catalog.projections p ON p.projection_id = pc.projection_id "
-            f"WHERE pc.table_schema = '{_quote_literal(self._schema)}' "
-            f"AND pc.table_name = '{_quote_literal(self._table_name)}' "
-            "AND p.is_super_projection AND pc.sort_position IS NOT NULL "
-            "ORDER BY pc.sort_position"
-        )
-        try:
-            rows = self._fetchall(self._conn.raw_sql(query))  # type: ignore[union-attr]
-        except Exception:
-            return []
-        return self._filter_excluded_names([str(row[0]) for row in rows if row and row[0]])
+        columns = self._conn.clustering_columns(self._schema, self._table_name)  # type: ignore[union-attr]
+        return self._filter_excluded_names(columns)
 
     def indexes(self) -> str | None:
         """Describe how the table is physically laid out: partitioning and segmentation."""
@@ -184,17 +224,7 @@ class VerticaDatabaseContext(DatabaseContext):
         )
 
     def _fetch_column_comments(self) -> dict[str, str]:
-        query = (
-            "SELECT child_object, comment FROM v_catalog.comments "
-            "WHERE object_type = 'COLUMN' "
-            f"AND object_schema = '{_quote_literal(self._schema)}' "
-            f"AND object_name = '{_quote_literal(self._table_name)}'"
-        )
-        try:
-            rows = self._fetchall(self._conn.raw_sql(query))  # type: ignore[union-attr]
-        except Exception:
-            return {}
-        return {str(row[0]): str(row[1]).strip() for row in rows if row and row[0] and row[1]}
+        return self._conn.column_comments(self._schema, self._table_name)  # type: ignore[union-attr]
 
     @staticmethod
     def _format_type(data_type: str, is_nullable: bool) -> str:
