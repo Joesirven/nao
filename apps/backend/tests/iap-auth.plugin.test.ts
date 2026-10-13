@@ -14,6 +14,7 @@ const ENABLED_CONFIG: IapConfig = {
 	allowedDomains: ['example.com'],
 	buttonLabel: 'Sign in with your company Google account',
 	hidePasswordLogin: true,
+	autoSignIn: true,
 };
 
 const hooks = {
@@ -98,6 +99,11 @@ async function signUpWithPassword(auth: TestAuth['auth'], email: string, passwor
 	return user;
 }
 
+function signedOutMarkerFrom(response: Response): string | null {
+	const setCookie = response.headers.get('set-cookie') ?? '';
+	return /better-auth\.iap_signed_out=1/.exec(setCookie)?.[0] ?? null;
+}
+
 function sessionCookieFrom(response: Response): string | null {
 	const setCookie = response.headers.get('set-cookie') ?? '';
 	return /better-auth\.session_token=[^;]+/.exec(setCookie)?.[0] ?? null;
@@ -112,6 +118,7 @@ describe('Identity-Aware Proxy status endpoint', () => {
 		expect(await response.json()).toEqual({
 			enabled: false,
 			email: null,
+			autoSignIn: false,
 			buttonLabel: null,
 			hidePasswordLogin: false,
 		});
@@ -125,6 +132,7 @@ describe('Identity-Aware Proxy status endpoint', () => {
 		expect(await response.json()).toEqual({
 			enabled: true,
 			email: 'alice@example.com',
+			autoSignIn: true,
 			buttonLabel: 'Sign in with your company Google account',
 			hidePasswordLogin: true,
 		});
@@ -138,8 +146,8 @@ describe('Identity-Aware Proxy status endpoint', () => {
 			'x-goog-iap-jwt-assertion': await fixture.signToken({ audience: 'wrong' }),
 		});
 
-		expect(await missing.json()).toMatchObject({ enabled: true, email: null });
-		expect(await invalid.json()).toMatchObject({ enabled: true, email: null });
+		expect(await missing.json()).toMatchObject({ enabled: true, email: null, autoSignIn: false });
+		expect(await invalid.json()).toMatchObject({ enabled: true, email: null, autoSignIn: false });
 	});
 
 	it('passes the hide setting through so administrators can bring the password fields back', async () => {
@@ -148,6 +156,47 @@ describe('Identity-Aware Proxy status endpoint', () => {
 		const response = await requestStatus(auth, { 'x-goog-iap-jwt-assertion': await fixture.signToken() });
 
 		expect(await response.json()).toMatchObject({ email: 'alice@example.com', hidePasswordLogin: false });
+	});
+});
+
+describe('Identity-Aware Proxy automatic sign-in after sign-out', () => {
+	it('does not sign in automatically when automatic sign-in is turned off', async () => {
+		const { auth } = await createAuth({ ...ENABLED_CONFIG, autoSignIn: false });
+
+		const response = await requestStatus(auth, { 'x-goog-iap-jwt-assertion': await fixture.signToken() });
+
+		expect(await response.json()).toMatchObject({ email: 'alice@example.com', autoSignIn: false });
+	});
+
+	it('marks an explicit sign-out so the next visit offers the button instead of signing straight back in', async () => {
+		const { auth } = await createAuth();
+		const token = await fixture.signToken();
+		const signIn = await requestSignIn(auth, { 'x-goog-iap-jwt-assertion': token });
+
+		const signOut = await auth.handler(
+			new Request(`${BASE_URL}/api/auth/sign-out`, {
+				method: 'POST',
+				headers: { origin: BASE_URL, cookie: sessionCookieFrom(signIn)! },
+			}),
+		);
+		const marker = signedOutMarkerFrom(signOut);
+		expect(marker).not.toBeNull();
+
+		const afterSignOut = await requestStatus(auth, { 'x-goog-iap-jwt-assertion': token, cookie: marker! });
+		expect(await afterSignOut.json()).toMatchObject({ email: 'alice@example.com', autoSignIn: false });
+	});
+
+	it('clears the sign-out marker when the user presses the button', async () => {
+		const { auth } = await createAuth();
+		const marker = 'better-auth.iap_signed_out=1';
+
+		const response = await requestSignIn(auth, {
+			'x-goog-iap-jwt-assertion': await fixture.signToken(),
+			cookie: marker,
+		});
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('set-cookie')).toMatch(/better-auth\.iap_signed_out=;[^,]*Max-Age=0/);
 	});
 });
 

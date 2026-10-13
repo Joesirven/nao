@@ -3,11 +3,18 @@ import { authClient } from '@/lib/auth-client';
 export interface IapStatus {
 	enabled: boolean;
 	email: string | null;
+	autoSignIn: boolean;
 	buttonLabel: string | null;
 	hidePasswordLogin: boolean;
 }
 
-const DISABLED_IAP_STATUS: IapStatus = { enabled: false, email: null, buttonLabel: null, hidePasswordLogin: false };
+const DISABLED_IAP_STATUS: IapStatus = {
+	enabled: false,
+	email: null,
+	autoSignIn: false,
+	buttonLabel: null,
+	hidePasswordLogin: false,
+};
 
 /** Asks the server whether this request carries a valid Identity-Aware Proxy identity to offer on the login page. */
 export async function fetchIapStatus(): Promise<IapStatus> {

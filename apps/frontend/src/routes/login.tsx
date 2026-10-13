@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { signIn } from '@/lib/auth-client';
 import { AuthForm, FormTextField } from '@/components/auth-form';
 import { IapSignInButton } from '@/components/auth-iap-button';
+import { useIapAutoSignIn } from '@/hooks/use-iap-auto-sign-in';
 import { useIapStatus } from '@/hooks/use-iap-status';
 import { useIsCloud } from '@/hooks/use-nao-mode';
 import { loadLastSignInMethod, rememberSignInMethod } from '@/lib/last-sign-in-method';
@@ -48,6 +49,11 @@ function Login() {
 		rememberSignInMethod('iap');
 		window.location.assign(oauthAuthorizeUrl ?? safeRedirect ?? '/');
 	};
+	const isAutoSigningIn = useIapAutoSignIn({
+		enabled: Boolean(iapEmail && iapStatus.data?.autoSignIn),
+		onSignedIn: completeIapSignIn,
+		onError: setServerError,
+	});
 
 	const form = useForm({
 		defaultValues: { email: '', password: '' },
@@ -91,7 +97,7 @@ function Login() {
 					/>
 				) : undefined
 			}
-			isIapSignInPending={iapStatus.isPending}
+			isIapSignInPending={iapStatus.isPending || isAutoSigningIn}
 			displayEmailPasswordForm={isUserLoginEnabled && !hidesPasswordLogin}
 			emailPasswordDisabledMessage={
 				hidesPasswordLogin

@@ -223,6 +223,11 @@ const baseRawEnvSchema = z.object({
 		.optional()
 		.default('true')
 		.transform((val) => val === 'true'),
+	NAO_IAP_AUTO_SIGN_IN: z
+		.enum(['true', 'false'])
+		.optional()
+		.default('true')
+		.transform((val) => val === 'true'),
 
 	SMTP_PASSWORD: z.string().optional(),
 	SMTP_HOST: z.string().optional(),

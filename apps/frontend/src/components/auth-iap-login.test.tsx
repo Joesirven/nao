@@ -8,6 +8,7 @@ import { Route } from '@/routes/login';
 
 const mocks = vi.hoisted(() => ({
 	iapStatus: { data: undefined as IapStatus | undefined, isPending: false },
+	search: { error: undefined as string | undefined, redirect: undefined as string | undefined },
 	signInWithIap: vi.fn(),
 	assign: vi.fn(),
 }));
@@ -15,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@tanstack/react-router', () => ({
 	createFileRoute: () => (options: Record<string, unknown>) => ({
 		...options,
-		useSearch: () => ({ error: undefined, redirect: undefined }),
+		useSearch: () => mocks.search,
 	}),
 	Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 	useNavigate: () => vi.fn(),
@@ -69,6 +70,7 @@ function passwordField() {
 beforeEach(() => {
 	localStorage.clear();
 	mocks.iapStatus = { data: undefined, isPending: false };
+	mocks.search = { error: undefined, redirect: undefined };
 	mocks.signInWithIap.mockReset().mockResolvedValue({ error: null });
 	vi.stubGlobal('location', { ...window.location, search: '', assign: mocks.assign });
 });
@@ -79,23 +81,85 @@ afterEach(() => {
 	mocks.assign.mockReset();
 });
 
-describe('login page with Identity-Aware Proxy sign-in', () => {
+function status(overrides: Partial<IapStatus> = {}): IapStatus {
+	return {
+		enabled: true,
+		email: 'alice@example.com',
+		autoSignIn: false,
+		buttonLabel: null,
+		hidePasswordLogin: true,
+		...overrides,
+	};
+}
+
+describe('login page with Identity-Aware Proxy automatic sign-in', () => {
+	it('signs in without a click and continues to the page that was asked for', async () => {
+		mocks.iapStatus.data = status({ autoSignIn: true });
+		mocks.search = { error: undefined, redirect: '/settings/account' };
+
+		render(<Login />);
+
+		await waitFor(() => expect(mocks.assign).toHaveBeenCalledWith('/settings/account'));
+		expect(mocks.signInWithIap).toHaveBeenCalledTimes(1);
+		expect(passwordField()).toBeNull();
+	});
+
+	it('does not sign in automatically without a verified identity', async () => {
+		mocks.iapStatus.data = status({ email: null, autoSignIn: false });
+
+		render(<Login />);
+
+		await Promise.resolve();
+		expect(mocks.signInWithIap).not.toHaveBeenCalled();
+		expect(passwordField()).not.toBeNull();
+	});
+
+	it('shows the button instead of signing in right after an explicit sign-out', async () => {
+		mocks.iapStatus.data = status({ autoSignIn: false });
+
+		render(<Login />);
+
+		expect(screen.getByRole('button', { name: 'Continue as alice@example.com' })).toBeDefined();
+		await Promise.resolve();
+		expect(mocks.signInWithIap).not.toHaveBeenCalled();
+	});
+
+	it('signs in with the button after a sign-out', async () => {
+		mocks.iapStatus.data = status({ autoSignIn: false });
+
+		render(<Login />);
+		fireEvent.click(screen.getByRole('button', { name: 'Continue as alice@example.com' }));
+
+		await waitFor(() => expect(mocks.assign).toHaveBeenCalledWith('/'));
+		expect(mocks.signInWithIap).toHaveBeenCalledTimes(1);
+	});
+
+	it('falls back to the button once, without retrying, when automatic sign-in is refused', async () => {
+		mocks.iapStatus.data = status({ autoSignIn: true });
+		mocks.signInWithIap.mockResolvedValue({ error: 'Not allowed' });
+
+		render(<Login />);
+
+		expect(await screen.findByText('Not allowed')).toBeDefined();
+		expect(screen.getByRole('button', { name: 'Continue as alice@example.com' })).toBeDefined();
+		expect(mocks.signInWithIap).toHaveBeenCalledTimes(1);
+		expect(mocks.assign).not.toHaveBeenCalled();
+	});
+});
+
+describe('login page with the Identity-Aware Proxy button', () => {
 	it('shows the normal page when the feature is off', () => {
-		mocks.iapStatus.data = { enabled: false, email: null, buttonLabel: null, hidePasswordLogin: false };
+		mocks.iapStatus.data = status({ enabled: false, email: null, hidePasswordLogin: false });
 
 		render(<Login />);
 
 		expect(passwordField()).not.toBeNull();
 		expect(screen.queryByRole('button', { name: /continue as/i })).toBeNull();
+		expect(mocks.signInWithIap).not.toHaveBeenCalled();
 	});
 
 	it('replaces the email and password fields with one button when a verified identity is present', () => {
-		mocks.iapStatus.data = {
-			enabled: true,
-			email: 'alice@example.com',
-			buttonLabel: null,
-			hidePasswordLogin: true,
-		};
+		mocks.iapStatus.data = status();
 
 		render(<Login />);
 
@@ -106,7 +170,7 @@ describe('login page with Identity-Aware Proxy sign-in', () => {
 	});
 
 	it('shows the normal page when the feature is on but no valid identity is present', () => {
-		mocks.iapStatus.data = { enabled: true, email: null, buttonLabel: null, hidePasswordLogin: true };
+		mocks.iapStatus.data = status({ email: null });
 
 		render(<Login />);
 
@@ -115,12 +179,7 @@ describe('login page with Identity-Aware Proxy sign-in', () => {
 	});
 
 	it('uses the configured label and still names the verified account', () => {
-		mocks.iapStatus.data = {
-			enabled: true,
-			email: 'alice@example.com',
-			buttonLabel: 'Sign in with your company Google account',
-			hidePasswordLogin: true,
-		};
+		mocks.iapStatus.data = status({ buttonLabel: 'Sign in with your company Google account' });
 
 		render(<Login />);
 
@@ -129,12 +188,7 @@ describe('login page with Identity-Aware Proxy sign-in', () => {
 	});
 
 	it('keeps password sign-in reachable when hiding is turned off', () => {
-		mocks.iapStatus.data = {
-			enabled: true,
-			email: 'alice@example.com',
-			buttonLabel: null,
-			hidePasswordLogin: false,
-		};
+		mocks.iapStatus.data = status({ hidePasswordLogin: false });
 
 		render(<Login />);
 
@@ -151,28 +205,8 @@ describe('login page with Identity-Aware Proxy sign-in', () => {
 		expect(passwordField()).toBeNull();
 	});
 
-	it('asks the server to sign in and then loads the app', async () => {
-		mocks.iapStatus.data = {
-			enabled: true,
-			email: 'alice@example.com',
-			buttonLabel: null,
-			hidePasswordLogin: true,
-		};
-
-		render(<Login />);
-		fireEvent.click(screen.getByRole('button', { name: 'Continue as alice@example.com' }));
-
-		await waitFor(() => expect(mocks.assign).toHaveBeenCalledWith('/'));
-		expect(mocks.signInWithIap).toHaveBeenCalledTimes(1);
-	});
-
 	it('shows the server error and stays on the page when sign-in is refused', async () => {
-		mocks.iapStatus.data = {
-			enabled: true,
-			email: 'alice@example.com',
-			buttonLabel: null,
-			hidePasswordLogin: true,
-		};
+		mocks.iapStatus.data = status();
 		mocks.signInWithIap.mockResolvedValue({ error: 'Not allowed' });
 
 		render(<Login />);

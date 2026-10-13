@@ -1,6 +1,6 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from 'better-auth';
 import { APIError } from 'better-auth';
-import { createAuthEndpoint, formCsrfMiddleware } from 'better-auth/api';
+import { createAuthEndpoint, createAuthMiddleware, formCsrfMiddleware } from 'better-auth/api';
 import { setSessionCookie } from 'better-auth/cookies';
 import { revokeUnprovenAccountAccess } from 'better-auth/db';
 import { handleOAuthUserInfo } from 'better-auth/oauth2';
@@ -16,11 +16,13 @@ export interface IapConfig {
 	allowedDomains: string[];
 	buttonLabel: string | null;
 	hidePasswordLogin: boolean;
+	autoSignIn: boolean;
 }
 
 export interface IapStatus {
 	enabled: boolean;
 	email: string | null;
+	autoSignIn: boolean;
 	buttonLabel: string | null;
 	hidePasswordLogin: boolean;
 }
@@ -33,6 +35,8 @@ export interface IapAuthOptions {
 }
 
 const SIGN_IN_UNAVAILABLE_MESSAGE = 'Identity-Aware Proxy sign-in is not available for this request.';
+const SIGNED_OUT_MARKER_COOKIE = 'iap_signed_out';
+const SIGNED_OUT_MARKER_MAX_AGE_SECONDS = 60 * 60;
 
 /** Reads the Identity-Aware Proxy settings; the feature stays off unless both audience and domains are set. */
 export function getIapConfig(): IapConfig | null {
@@ -52,6 +56,7 @@ export function getIapConfig(): IapConfig | null {
 		allowedDomains,
 		buttonLabel: env.NAO_IAP_BUTTON_LABEL ?? null,
 		hidePasswordLogin: env.NAO_IAP_HIDE_PASSWORD_LOGIN,
+		autoSignIn: env.NAO_IAP_AUTO_SIGN_IN,
 	};
 }
 
@@ -61,15 +66,17 @@ export function isIapAdministratorEmail(email: string): boolean {
 
 /**
  * Better-auth plugin that turns a verified Identity-Aware Proxy identity into a nao session.
- * The status endpoint only tells the login page whether to offer the button; the sign-in
- * endpoint verifies the signed header again and never trusts anything the browser sends.
+ * The status endpoint only tells the login page whether to sign in automatically or offer the
+ * button; the sign-in endpoint verifies the signed header again and never trusts anything the
+ * browser sends. Signing out leaves a short-lived marker so the next visit shows the button
+ * instead of signing straight back in.
  */
 export function iapAuth(options: IapAuthOptions) {
 	return {
 		id: 'iap',
 		endpoints: {
 			getIapStatus: createAuthEndpoint('/iap/status', { method: 'GET' }, async (ctx) => {
-				return ctx.json(await getIapStatus(ctx.headers, options));
+				return ctx.json(await getIapStatus(ctx, options));
 			}),
 			signInWithIap: createAuthEndpoint(
 				IAP_SIGN_IN_PATH,
@@ -78,22 +85,34 @@ export function iapAuth(options: IapAuthOptions) {
 					const identity = await requireVerifiedIdentity(ctx.headers, options);
 					const session = await signInIdentity(ctx, identity, options);
 					await setSessionCookie(ctx, session);
+					clearSignedOutMarker(ctx);
 					return ctx.json({ user: { id: session.user.id, email: session.user.email } });
 				},
 			),
 		},
+		hooks: {
+			after: [
+				{
+					matcher: (ctx) => Boolean(options.config) && ctx.path === '/sign-out',
+					handler: createAuthMiddleware(async (ctx) => {
+						setSignedOutMarker(ctx);
+					}),
+				},
+			],
+		},
 	} satisfies BetterAuthPlugin;
 }
 
-async function getIapStatus(headers: Headers | undefined, options: IapAuthOptions): Promise<IapStatus> {
+async function getIapStatus(ctx: GenericEndpointContext, options: IapAuthOptions): Promise<IapStatus> {
 	if (!options.config) {
-		return { enabled: false, email: null, buttonLabel: null, hidePasswordLogin: false };
+		return { enabled: false, email: null, autoSignIn: false, buttonLabel: null, hidePasswordLogin: false };
 	}
 
-	const identity = await verifyRequestIdentity(headers, options.config, options.keySet);
+	const identity = await verifyRequestIdentity(ctx.headers, options.config, options.keySet);
 	return {
 		enabled: true,
 		email: identity?.email ?? null,
+		autoSignIn: Boolean(identity) && options.config.autoSignIn && !hasSignedOutMarker(ctx),
 		buttonLabel: options.config.buttonLabel,
 		hidePasswordLogin: options.config.hidePasswordLogin,
 	};
@@ -172,6 +191,24 @@ async function verifyRequestIdentity(
 		});
 	}
 	return null;
+}
+
+function signedOutMarkerCookie(ctx: GenericEndpointContext) {
+	return ctx.context.createAuthCookie(SIGNED_OUT_MARKER_COOKIE, { maxAge: SIGNED_OUT_MARKER_MAX_AGE_SECONDS });
+}
+
+function hasSignedOutMarker(ctx: GenericEndpointContext): boolean {
+	return Boolean(ctx.getCookie(signedOutMarkerCookie(ctx).name));
+}
+
+function setSignedOutMarker(ctx: GenericEndpointContext): void {
+	const cookie = signedOutMarkerCookie(ctx);
+	ctx.setCookie(cookie.name, '1', cookie.attributes);
+}
+
+function clearSignedOutMarker(ctx: GenericEndpointContext): void {
+	const cookie = signedOutMarkerCookie(ctx);
+	ctx.setCookie(cookie.name, '', { ...cookie.attributes, maxAge: 0 });
 }
 
 function parseList(raw: string | undefined): string[] {

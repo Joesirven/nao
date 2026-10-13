@@ -1,14 +1,17 @@
 # Google Identity-Aware Proxy (IAP) sign-in
 
-When nao runs behind Google Cloud's Identity-Aware Proxy, users have already proved who they are to Google before any request reaches nao. With this feature on, the login page offers a single button such as **Continue as alice@example.com**, so users do not have to log in a second time.
+When nao runs behind Google Cloud's Identity-Aware Proxy, users have already proved who they are to Google before any request reaches nao. With this feature on, nao signs them in automatically and takes them to the page they asked for, so they never log in a second time. Right after an explicit sign-out, the login page offers a single button such as **Continue as alice@example.com** instead.
 
 The feature is off unless configured, and it is not available in cloud mode.
 
 ## How it works
 
 1. IAP adds a signed JSON Web Token to every request in the `x-goog-iap-jwt-assertion` header.
-2. The login page asks `GET /api/auth/iap/status` whether the current request carries a valid token. If it does, the page shows the button. If it does not, the page shows the normal login form.
-3. Clicking the button calls `POST /api/auth/iap/sign-in`. The server verifies the header again and creates a normal nao session for that email. The button is only presentation: the browser never sends an identity of its own.
+2. A visitor without a nao session is sent to the login page, which asks `GET /api/auth/iap/status` whether the request carries a valid token. If it does not, the page shows the normal login form.
+3. If the token is valid, the page calls `POST /api/auth/iap/sign-in` straight away, with no click, and then loads the page the visitor originally asked for. The server verifies the header again on that request and creates a normal nao session for that email. The browser never sends an identity of its own.
+4. If automatic sign-in is turned off, the visitor has just signed out, or the automatic attempt is refused, the page shows the **Continue as** button instead. Pressing it makes the same verified request.
+
+On a fresh install where `ENABLE_USER_SIGNUP=true` and nobody has an account yet, visitors are sent to the sign-up page instead of the login page, so automatic sign-in does not run there. Open `/login` directly for the first sign-in.
 
 The token is verified as [Google documents it](https://docs.cloud.google.com/iap/docs/signed-headers-howto):
 
@@ -30,6 +33,7 @@ Requiring `hd` rejects personal Google accounts that happen to use a company add
 | `NAO_IAP_DEFAULT_ROLE`        | No       | `viewer` | Role given to users created through IAP: `viewer`, `user` or `admin`. Viewers cannot send chat messages, so most deployments that want chat should use `user`. |
 | `NAO_IAP_BUTTON_LABEL`        | No       | —        | Replaces `Continue as <email>`, for example `Sign in with your company Google account`. The verified email is still shown under the button.                    |
 | `NAO_IAP_HIDE_PASSWORD_LOGIN` | No       | `true`   | Hides the email and password fields while a verified identity is present. Set to `false` to keep them reachable.                                               |
+| `NAO_IAP_AUTO_SIGN_IN`        | No       | `true`   | Signs in automatically when a verified identity is present. Set to `false` to always show the button instead.                                                  |
 
 `BETTER_AUTH_URL` must be the URL users reach through IAP, because the sign-in request is checked against it as a trusted origin.
 
@@ -57,7 +61,7 @@ The audience depends on what IAP protects:
 
 ## Sign-out
 
-Signing out of nao ends the nao session and returns the user to the login page. The page shows the IAP button again but never signs in by itself, so there is no sign-out loop. To also end the IAP session, for example on a shared computer, open `https://YOUR_APP_URL/?gcp-iap-mode=CLEAR_LOGIN_COOKIE`. This clears IAP's cookies. Google may sign the user back in silently if only one Google account is in use ([IAP special URLs](https://docs.cloud.google.com/iap/docs/special-urls-howto)). Google documents this URL for IAP in general; the page does not say whether it applies to IAP enabled directly on a Cloud Run service, so confirm it on your deployment.
+Signing out of nao ends the nao session and sets a short-lived marker cookie (one hour). While it is present the login page shows the **Continue as** button instead of signing in automatically, so sign-out does not loop. Pressing the button clears the marker. To also end the IAP session, for example on a shared computer, open `https://YOUR_APP_URL/?gcp-iap-mode=CLEAR_LOGIN_COOKIE`. This clears IAP's cookies. Google may sign the user back in silently if only one Google account is in use ([IAP special URLs](https://docs.cloud.google.com/iap/docs/special-urls-howto)). Google documents this URL for IAP in general; the page does not say whether it applies to IAP enabled directly on a Cloud Run service, so confirm it on your deployment.
 
 If a different person later passes IAP in the same browser while the earlier nao session is still active, that nao session stays active until it expires or the earlier user signs out.
 
