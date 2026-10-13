@@ -1,3 +1,4 @@
+import ssl
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -238,8 +239,70 @@ def test_non_verifying_modes_drop_the_ca_bundle(mode):
     assert options == {"tlsmode": mode}
 
 
-def test_verifying_without_a_ca_bundle_falls_back_to_the_system_trust_store():
-    assert _config(tlsmode="verify-full").tls_connection_options() == {"tlsmode": "verify-full"}
+@pytest.mark.parametrize("mode", ["verify-ca", "verify-full"])
+def test_verifying_without_a_ca_bundle_falls_back_to_the_system_trust_store(mode):
+    """vertica-python's own context-building only loads a trust store when a cafile
+    is given, leaving verify-ca/verify-full with zero trust anchors otherwise.
+    ssl.create_default_context() is what actually loads the platform trust store.
+    """
+    options = _config(tlsmode=mode).tls_connection_options()
+
+    assert options.keys() == {"ssl"}
+    context = options["ssl"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.cert_store_stats()["x509_ca"] > 0
+
+
+@pytest.mark.parametrize("mode", ["verify-ca", "verify-full"])
+def test_check_hostname_follows_the_mode_without_a_ca_bundle(mode):
+    context = _config(tlsmode=mode).tls_connection_options()["ssl"]
+
+    assert context.check_hostname == (mode == "verify-full")
+
+
+def _self_signed_cert_and_key(tmp_path):
+    """Write a throwaway self-signed certificate and key, for load_cert_chain()."""
+    from datetime import datetime, timedelta, timezone
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "nao-vertica-test-client")])
+    now = datetime.now(timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+
+    certfile = tmp_path / "client.crt"
+    keyfile = tmp_path / "client.key"
+    certfile.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    keyfile.write_bytes(
+        key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    return str(certfile), str(keyfile)
+
+
+def test_mutual_tls_without_a_ca_bundle_still_loads_the_client_certificate(tmp_path):
+    certfile, keyfile = _self_signed_cert_and_key(tmp_path)
+
+    context = _config(tlsmode="verify-full", tls_certfile=certfile, tls_keyfile=keyfile).tls_connection_options()["ssl"]
+
+    assert context.cert_store_stats()["x509_ca"] > 0
 
 
 def test_mutual_tls_forwards_the_client_certificate_and_key():

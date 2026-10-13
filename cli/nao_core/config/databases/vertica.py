@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ssl
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field, model_validator
@@ -259,19 +260,50 @@ class VerticaConfig(DatabaseConfig):
             raise ValueError("tls_certfile and tls_keyfile must be provided together for mutual TLS")
         return self
 
-    def tls_connection_options(self) -> dict[str, str]:
+    def tls_connection_options(self) -> dict[str, Any]:
         """Map the TLS config fields onto vertica-python's connection options.
 
         Certificate paths are only forwarded when the mode actually verifies or
         presents them, so the driver never warns about options it would ignore.
+
+        verify-ca and verify-full without an explicit tls_cafile are special-cased:
+        vertica-python's own TLSMode.get_sslcontext() only calls
+        load_verify_locations() when a cafile is given, and otherwise builds a bare
+        ssl.SSLContext with no trust anchors at all, so CERT_REQUIRED then rejects
+        every certificate, including ones a real system trust store would accept.
+        Building the context with ssl.create_default_context() instead, which does
+        load the platform trust store, keeps the "falls back to the system trust
+        store" promise in tls_cafile's own docstring above. vertica-python lets
+        "tlsmode" and a pre-built "ssl" context coexist as options, but tlsmode
+        always wins when both are present, so the pre-built context is passed alone.
         """
-        options: dict[str, str] = {"tlsmode": self.tlsmode}
+        if self.tlsmode in ("verify-ca", "verify-full") and not self.tls_cafile:
+            return {"ssl": self._default_trust_store_sslcontext()}
+        options: dict[str, Any] = {"tlsmode": self.tlsmode}
         if self.tlsmode in ("verify-ca", "verify-full") and self.tls_cafile:
             options["tls_cafile"] = self.tls_cafile
         if self.tlsmode != "disable" and self.tls_certfile and self.tls_keyfile:
             options["tls_certfile"] = self.tls_certfile
             options["tls_keyfile"] = self.tls_keyfile
         return options
+
+    def _default_trust_store_sslcontext(self) -> ssl.SSLContext:
+        context = ssl.create_default_context()
+        if context.cert_store_stats()["x509_ca"] == 0:
+            # Python.org-style macOS builds point OpenSSL's compiled-in default
+            # paths at a certificate bundle that a manual post-install step is
+            # meant to populate; an interpreter built the same way, including
+            # this machine's, inherits an empty trust store when that step never
+            # ran. certifi's bundle is the same fallback pip itself relies on for
+            # this exact situation, and already a dependency of nao-core's own
+            # databricks extra.
+            import certifi
+
+            context.load_verify_locations(cafile=certifi.where())
+        context.check_hostname = self.tlsmode == "verify-full"
+        if self.tls_certfile and self.tls_keyfile:
+            context.load_cert_chain(certfile=self.tls_certfile, keyfile=self.tls_keyfile)
+        return context
 
     @classmethod
     def promptConfig(cls) -> "VerticaConfig":

@@ -66,7 +66,9 @@ fabric = ["ibis-framework[mssql]>=9.0.0", "azure-identity>=1.19.0"]
 starrocks = ["mysql-connector-python==9.5.0"]
 # Vertica speaks its own wire protocol, not the Postgres one, and Ibis has no
 # Vertica backend — so the adapter drives the official pure-Python client directly.
-vertica = ["vertica-python>=1.4.0"]
+# certifi backs verify-ca/verify-full when no tls_cafile is given and the platform
+# trust store turns out empty, the same fallback pip itself relies on.
+vertica = ["vertica-python>=1.4.0", "certifi>=2024.0.0"]
 
 # LLM providers
 openai = ["openai>=1.0.0"]
