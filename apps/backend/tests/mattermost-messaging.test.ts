@@ -1,7 +1,7 @@
 import { createMattermostAdapter } from 'chat-adapter-mattermost';
 import { describe, expect, it, vi } from 'vitest';
 
-import { generateChartImage } from '../src/components/generate-chart';
+import { renderChartToSvg } from '../src/components/generate-chart';
 import {
 	buildMattermostAnswerPatchBody,
 	cacheMattermostEmail,
@@ -673,7 +673,7 @@ describe('createMattermostMarkdownTable', () => {
 
 describe('Mattermost chart images', () => {
 	it('renders date-axis charts from persisted ISO date strings', () => {
-		const image = generateChartImage({
+		const svg = renderChartToSvg({
 			config: {
 				chart_type: 'line',
 				x_axis_key: 'month',
@@ -694,7 +694,8 @@ describe('Mattermost chart images', () => {
 			],
 		});
 
-		expect(image.byteLength).toBeGreaterThan(0);
+		expect(svg).toContain('<svg');
+		expect(svg).toContain('Monthly Revenue Trend');
 	});
 });
 
