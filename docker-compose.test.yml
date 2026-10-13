@@ -58,6 +58,46 @@ services:
             timeout: 5s
             retries: 5
 
+    # Vertica Community Edition — for sync integration tests, with server TLS on.
+    # Community Edition licensing was removed in 26.1, so the tag is pinned to the
+    # last release that still accepts the bundled Community Edition key.
+    # See docker/vertica-test-entrypoint.sh for how the database and its
+    # certificate are created; the CA certificate it mints is published to
+    # ./docker/vertica-certs/ca.crt so the tests can verify the server.
+    # Published on Vertica's own port 5433; override VERTICA_PORT when that is
+    # already taken on the host.
+    # From repo root:
+    #   docker compose -f docker-compose.test.yml up -d vertica
+    #   cd cli && cp tests/nao_core/commands/sync/integration/.env.example \
+    #        tests/nao_core/commands/sync/integration/.env
+    #   uv run pytest tests/nao_core/commands/sync/integration/test_vertica.py -v
+    vertica:
+        image: opentext/vertica-k8s:25.3.0-8
+        container_name: nao_test_vertica
+        # Starts as root only to create dbadmin, prepare the volume and mint the
+        # test certificate; the server itself runs as dbadmin, and Vertica refuses
+        # to run as root anyway.
+        user: root
+        entrypoint: ['/bin/bash', '/vertica-test-entrypoint.sh']
+        # A single-node test database needs very little; the cap keeps Vertica from
+        # crowding out everything else on a small machine.
+        mem_limit: 1536m
+        ulimits:
+            nofile: 65536
+            nproc: 8192
+        ports:
+            - '${VERTICA_PORT:-5433}:5433'
+        volumes:
+            - nao_vertica_data:/vdata
+            - ./docker/vertica-test-entrypoint.sh:/vertica-test-entrypoint.sh:ro
+            - ./docker/vertica-certs:/certs
+        healthcheck:
+            test: ['CMD-SHELL', '/opt/vertica/bin/vsql -U dbadmin -d vdb -c "SELECT 1" > /dev/null 2>&1']
+            interval: 10s
+            timeout: 10s
+            retries: 30
+
 volumes:
     nao_mysql_data:
     nao_postgres_data:
+    nao_vertica_data:

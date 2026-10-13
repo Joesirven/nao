@@ -18,6 +18,7 @@ from .redshift import RedshiftConfig
 from .snowflake import SnowflakeConfig
 from .starrocks import StarRocksConfig
 from .trino import TrinoConfig
+from .vertica import VerticaConfig
 
 # =============================================================================
 # Database Config Registry
@@ -40,6 +41,7 @@ AnyDatabaseConfig = Annotated[
         Annotated[RedshiftConfig, Tag("redshift")],
         Annotated[StarRocksConfig, Tag("starrocks")],
         Annotated[TrinoConfig, Tag("trino")],
+        Annotated[VerticaConfig, Tag("vertica")],
     ],
     Discriminator("type"),
 ]
@@ -62,6 +64,7 @@ DATABASE_CONFIG_CLASSES: Dict[DatabaseType, Type[object]] = {
     DatabaseType.REDSHIFT: RedshiftConfig,
     DatabaseType.STARROCKS: StarRocksConfig,
     DatabaseType.TRINO: TrinoConfig,
+    DatabaseType.VERTICA: VerticaConfig,
 }
 
 
@@ -101,4 +104,5 @@ __all__ = [
     "PostgresConfig",
     "RedshiftConfig",
     "TrinoConfig",
+    "VerticaConfig",
 ]

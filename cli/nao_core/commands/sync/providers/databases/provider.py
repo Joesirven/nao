@@ -300,7 +300,7 @@ def sync_database(
 
         usage_stats: dict[str, TableUsageStats] = {}
         if has_query_history and raw_queries and selected_tables:
-            dialect = db_config.type if db_config.type != "duckdb" else None
+            dialect = db_config.get_query_history_dialect()
             usage_stats = compute_table_usage(raw_queries, selected_tables, dialect=dialect)
 
         for schema, tables in schema_tables.items():

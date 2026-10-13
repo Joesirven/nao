@@ -98,6 +98,10 @@ class DuckDBConfig(DatabaseConfig):
             conn.raw_sql("SET lock_configuration = true")
         return conn
 
+    def get_query_history_dialect(self) -> str | None:
+        """Let sqlglot auto-detect: DuckDB accepts SQL written for several dialects."""
+        return None
+
     def get_database_name(self) -> str:
         """Get the database name for DuckDB."""
         if self.path == ":memory:":

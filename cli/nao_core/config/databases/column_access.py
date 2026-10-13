@@ -45,6 +45,7 @@ _SQLGLOT_DIALECTS = {
     "redshift": "redshift",
     "starrocks": "mysql",
     "trino": "trino",
+    "vertica": "postgres",
 }
 
 _STAR_EXCLUSION_KEYWORDS = {

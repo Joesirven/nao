@@ -36,6 +36,7 @@ from nao_core.config.databases import (  # noqa: E402
     RedshiftConfig,
     SnowflakeConfig,
     TrinoConfig,
+    VerticaConfig,
 )
 from nao_core.config.databases.base import (  # noqa: E402
     DatabaseAccessor,
@@ -172,6 +173,7 @@ DATABASE_CONFIGS: list[tuple[str, str, type[DatabaseConfig]]] = [
     ("Amazon Redshift", "redshift", RedshiftConfig),
     ("Trino", "trino", TrinoConfig),
     ("Amazon Athena", "athena", AthenaConfig),
+    ("Vertica", "vertica", VerticaConfig),
 ]
 
 BASE_DB_FIELDS = {

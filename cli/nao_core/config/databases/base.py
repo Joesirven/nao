@@ -33,6 +33,7 @@ class DatabaseType(str, Enum):
     REDSHIFT = "redshift"
     STARROCKS = "starrocks"
     TRINO = "trino"
+    VERTICA = "vertica"
 
     @classmethod
     def _label(cls, db_type: "DatabaseType") -> str:
@@ -349,6 +350,15 @@ class DatabaseConfig(BaseModel, ABC):
         if "{days}" not in sql:
             return sql
         return sql.replace("{days}", str(days))
+
+    def get_query_history_dialect(self) -> str | None:
+        """Return the sqlglot dialect used to parse query history for this database type.
+
+        Defaults to the database type, which is the dialect name for most
+        warehouses. Override when sqlglot names the dialect differently or does
+        not know it at all; returning ``None`` lets sqlglot auto-detect.
+        """
+        return self.type
 
     def filter_query_history(self, queries: list[str]) -> list[str]:
         """Drop queries whose text matches any configured exclude pattern."""

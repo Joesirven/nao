@@ -27,6 +27,7 @@ pip install 'nao-core[trino]'
 pip install 'nao-core[redshift]'
 pip install 'nao-core[fabric]'
 pip install 'nao-core[starrocks]'
+pip install 'nao-core[vertica]'
 
 # LLM providers
 pip install 'nao-core[openai]'
@@ -89,7 +90,7 @@ nao init
 
 This will create a new nao project in the current directory. It will prompt you for a project name and ask you to configure:
 
-- **Database connections** (BigQuery, DuckDB, MotherDuck, DuckLake, Databricks, Snowflake, PostgreSQL, Redshift, MSSQL, Trino, StarRocks)
+- **Database connections** (BigQuery, DuckDB, MotherDuck, DuckLake, Databricks, Snowflake, PostgreSQL, Redshift, MSSQL, Trino, StarRocks, Vertica)
 - **Git repositories** to sync
 - **LLM provider** (OpenAI, Anthropic, Mistral, Gemini, OpenRouter, Requesty, Ollama)
 - **`ai_summary` template + model** (prompted only when you enable `ai_summary` for databases)

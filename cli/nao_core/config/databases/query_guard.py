@@ -34,7 +34,15 @@ SQLGLOT_DIALECTS = {
     "redshift": "redshift",
     "starrocks": "mysql",
     "trino": "trino",
+    # sqlglot has no Vertica dialect; Vertica's SQL is closest to Postgres.
+    "vertica": "postgres",
 }
+
+
+# Warehouses that compare unquoted identifiers case-insensitively while storing
+# them with their original case, so the sqlglot dialect's own normalisation
+# (lowercasing, for Postgres and MySQL) would not match the live metadata.
+_CASE_INSENSITIVE_IDENTIFIER_TYPES = {"starrocks", "vertica"}
 
 
 def parse_query(sql: str, dialect: str, blocked: BlockedFactory) -> exp.Query:
@@ -87,7 +95,7 @@ def resolve_table(
     dialect: str,
     blocked: BlockedFactory,
 ) -> tuple[str, str]:
-    case_insensitive = db_config.type == "starrocks"
+    case_insensitive = db_config.type in _CASE_INSENSITIVE_IDENTIFIER_TYPES
     requested_table = table_expression.args.get("this")
     if not isinstance(requested_table, exp.Identifier) or not requested_table.name:
         raise blocked("a dynamic table reference could not be resolved")

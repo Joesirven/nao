@@ -15,7 +15,7 @@ Take the user from `pip install nao-core` to a synced project with a starter `RU
 
 Send a single message asking for:
 
-1. **Warehouse + auth** — type (BigQuery / Snowflake / Postgres / Redshift / DuckDB / Databricks / Athena / ClickHouse / Fabric / MSSQL / MySQL / Trino), and the auth credentials they have on hand. Tell them you'll fetch the exact field names from the nao docs once they pick a type.
+1. **Warehouse + auth** — type (BigQuery / Snowflake / Postgres / Redshift / DuckDB / Databricks / Athena / ClickHouse / Fabric / MSSQL / MySQL / Trino / Vertica), and the auth credentials they have on hand. Tell them you'll fetch the exact field names from the nao docs once they pick a type.
 2. **Scope** — which tables. Two valid shapes:
     - **Broad** — gold/marts across multiple domains (exec / cross-functional agents).
     - **Deep** — silver + gold for one domain (team-specific agents).
@@ -60,7 +60,7 @@ Per database in the yaml, set:
 templates: [columns, preview]
 ```
 
-Valid values are `columns`, `preview`, `profiling`, `query_history`, and `ai_summary`; the default is `[columns, preview]`. `profiling` and `query_history` are opt-in, and `query_history` requires BigQuery, Snowflake, Postgres, Redshift, Databricks, or a custom `query_history_sql`.
+Valid values are `columns`, `preview`, `profiling`, `query_history`, and `ai_summary`; the default is `[columns, preview]`. `profiling` and `query_history` are opt-in, and `query_history` requires BigQuery, Snowflake, Postgres, Redshift, Databricks, Vertica, or a custom `query_history_sql`.
 
 **Don't use `accessors` — deprecated** (renamed to `templates`).
 
@@ -120,7 +120,7 @@ Regular human terminals aren't affected.
 
 ## Appendix — `nao_config.yaml` skeleton (BigQuery example)
 
-Use this shape and adapt the `databases:` block per warehouse — see [docs.getnao.io/nao-agent/context-builder/databases](https://docs.getnao.io/nao-agent/context-builder/databases) for the exact required/optional fields for Snowflake, Postgres, Redshift, Databricks, Athena, ClickHouse, Fabric, MSSQL, MySQL, Trino, MotherDuck.
+Use this shape and adapt the `databases:` block per warehouse — see [docs.getnao.io/nao-agent/context-builder/databases](https://docs.getnao.io/nao-agent/context-builder/databases) for the exact required/optional fields for Snowflake, Postgres, Redshift, Databricks, Athena, ClickHouse, Fabric, MSSQL, MySQL, Trino, MotherDuck, Vertica.
 
 ```yaml
 project_name: <project>

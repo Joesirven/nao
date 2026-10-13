@@ -33,6 +33,7 @@ _EXTRAS: dict[str, list[str]] = {
     "redshift": ["ibis.backends.postgres", "sshtunnel"],
     "fabric": ["ibis.backends.mssql", "azure.identity"],
     "starrocks": ["mysql.connector"],
+    "vertica": ["vertica_python"],
     # LLM providers
     "openai": ["openai"],
     "anthropic": ["anthropic"],

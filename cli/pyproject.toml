@@ -64,6 +64,9 @@ trino = ["ibis-framework[trino]>=9.0.0"]
 redshift = ["ibis-framework[postgres]>=9.0.0", "sshtunnel>=0.4.0", "redshift-connector>=2.1.13"]
 fabric = ["ibis-framework[mssql]>=9.0.0", "azure-identity>=1.19.0"]
 starrocks = ["mysql-connector-python==9.5.0"]
+# Vertica speaks its own wire protocol, not the Postgres one, and Ibis has no
+# Vertica backend — so the adapter drives the official pure-Python client directly.
+vertica = ["vertica-python>=1.4.0"]
 
 # LLM providers
 openai = ["openai>=1.0.0"]
@@ -92,7 +95,7 @@ k8s-secrets = ["kubernetes>=29.0.0"]
 
 # Convenience groups
 all-databases = [
-    "nao-core[postgres,bigquery,snowflake,duckdb,clickhouse,databricks,mysql,mssql,athena,trino,redshift,fabric,starrocks]",
+    "nao-core[postgres,bigquery,snowflake,duckdb,clickhouse,databricks,mysql,mssql,athena,trino,redshift,fabric,starrocks,vertica]",
 ]
 all-llms = ["nao-core[openai,anthropic,mistral,gemini,ollama]"]
 all = ["nao-core[all-databases,all-llms,notion,confluence,semantic-layer,aws-secrets,k8s-secrets]"]

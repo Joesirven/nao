@@ -63,6 +63,32 @@ describe('dialect-aware system prompt', () => {
 		expect(mysql).toContain('**MySQL dialect:** Use backtick-quoted identifiers');
 	});
 
+	it('injects Vertica dialect rules when a vertica connection is present', () => {
+		const section = sqlQueryRulesSection(renderWith([{ type: 'vertica', database: 'analytics' }]));
+
+		expect(section).toContain('**Vertica dialect:** Do not use `SELECT DISTINCT ON (...)`');
+		expect(section).toContain('`COUNT(CASE WHEN ... THEN 1 END)`');
+		expect(section).toContain('Do not use `GROUP BY ALL`');
+		expect(section).toContain('Do not use `QUALIFY`');
+		expect(section).toContain('`ORDER BY CASE WHEN col IS NULL THEN 1 ELSE 0 END, col`');
+		expect(section).toContain('`TO_JSON(IMPLODE(col))`');
+		expect(section).toContain('`CONCAT()` takes exactly two arguments');
+		expect(section).toContain('`MEDIAN(col) OVER ()`');
+	});
+
+	it('renders each Vertica dialect rule as its own bullet', () => {
+		const section = sqlQueryRulesSection(renderWith([{ type: 'vertica', database: 'analytics' }]));
+		const verticaBullets = section
+			.split('\n')
+			.filter((line) => line.startsWith('- ') && line.includes('Vertica dialect'));
+		expect(verticaBullets.length).toBe(1);
+	});
+
+	it('does not leak Vertica rules into other dialects', () => {
+		const section = sqlQueryRulesSection(renderWith([{ type: 'postgres', database: 'analytics' }]));
+		expect(section).not.toContain('Vertica dialect');
+	});
+
 	it('injects the ClickHouse tool-call rule under Tool Calls', () => {
 		const markdown = renderWith([{ type: 'clickhouse', database: 'events' }]);
 		const toolCalls = markdown.slice(markdown.indexOf('## Tool Calls'), markdown.indexOf('## SQL Query Rules'));
@@ -89,5 +115,16 @@ describe('dialect rules end-to-end from a synced project folder', () => {
 		const markdown = renderToMarkdown(SystemPrompt({ connections }));
 		expect(markdown).toContain('**Redshift dialect:** Do not use `SELECT DISTINCT ON (...)`');
 		expect(markdown).toContain('`COUNT(CASE WHEN ... THEN 1 END)`');
+	});
+
+	it('discovers a vertica connection and injects its dialect rules', () => {
+		mkdirSync(join(projectFolder, 'databases', 'type=vertica', 'database=vdb'), { recursive: true });
+
+		const connections = getConnections(projectFolder);
+		expect(connections).toEqual(expect.arrayContaining([{ type: 'vertica', database: 'vdb' }]));
+
+		const markdown = renderToMarkdown(SystemPrompt({ connections }));
+		expect(markdown).toContain('**Vertica dialect:** Do not use `SELECT DISTINCT ON (...)`');
+		expect(markdown).toContain('`TO_JSON(IMPLODE(col))`');
 	});
 });

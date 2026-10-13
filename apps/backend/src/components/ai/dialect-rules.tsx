@@ -132,6 +132,44 @@ export const DIALECT_GUIDANCE: DialectGuidance[] = [
 			</>,
 		],
 	},
+	{
+		matches: ['vertica'],
+		label: 'Vertica dialect',
+		sqlRules: [
+			<>
+				Do not use <Code>SELECT DISTINCT ON (...)</Code> — it is rejected outright. Deduplicate with{' '}
+				<Code>ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)</Code> in a subquery and keep the rows where the
+				row number equals 1.
+			</>,
+			<>
+				Do not use <Code>COUNT(*) FILTER (WHERE ...)</Code>. Use <Code>COUNT(CASE WHEN ... THEN 1 END)</Code>{' '}
+				instead.
+			</>,
+			<>
+				Do not use <Code>GROUP BY ALL</Code> — explicitly list every non-aggregated column.
+			</>,
+			<>
+				Do not use <Code>QUALIFY</Code>. Compute the window function in a subquery and filter on it in the outer{' '}
+				<Code>WHERE</Code>.
+			</>,
+			<>
+				Do not use <Code>NULLS FIRST</Code>/<Code>NULLS LAST</Code> — Vertica rejects them. Sort nulls
+				explicitly, e.g. <Code>ORDER BY CASE WHEN col IS NULL THEN 1 ELSE 0 END, col</Code>.
+			</>,
+			<>
+				There is no <Code>STRING_AGG</Code>, <Code>LISTAGG</Code>, <Code>GROUP_CONCAT</Code> or{' '}
+				<Code>ARRAY_AGG</Code>. Aggregate values into one string with <Code>TO_JSON(IMPLODE(col))</Code>.
+			</>,
+			<>
+				<Code>CONCAT()</Code> takes exactly two arguments. Chain the <Code>||</Code> operator for more (e.g.{' '}
+				<Code>first_name || ' ' || last_name</Code>).
+			</>,
+			<>
+				<Code>MEDIAN()</Code> is analytic only and needs an <Code>OVER</Code> clause. Use{' '}
+				<Code>MEDIAN(col) OVER ()</Code> or <Code>PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col)</Code>.
+			</>,
+		],
+	},
 ];
 
 export function getDialectSqlQueryRules(connections: ConnectionLike[]): ReactNode[] {

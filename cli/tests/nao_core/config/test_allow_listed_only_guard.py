@@ -396,6 +396,33 @@ def test_allowlist_requires_exact_resolved_table_name(tmp_path: Path):
         enforce_allow_listed_only("SELECT * FROM main.users", config, tmp_path)
 
 
+def test_vertica_mixed_case_table_resolves_from_a_lowercase_query(tmp_path: Path):
+    """Vertica stores identifiers with their case but compares them case-insensitively.
+
+    The Postgres sqlglot dialect lowercases unquoted identifiers, so without
+    case-insensitive matching the guard would not find a table created as "Events".
+    """
+    create_context_table(tmp_path, "Analytics", "Events", database_type="vertica", database_folder="vdb")
+    config = FakeDatabaseConfig(True, {"Analytics": ["Events"]}, database_name="vdb")
+    config.type = "vertica"
+    allowed_sql = "SELECT * FROM analytics.events"
+
+    assert enforce_allow_listed_only(allowed_sql, config, tmp_path) == allowed_sql
+
+    with pytest.raises(AllowListedOnlyGuardError):
+        enforce_allow_listed_only("SELECT * FROM analytics.secrets", config, tmp_path)
+
+
+def test_vertica_quoted_identifier_keeps_its_case(tmp_path: Path):
+    """A double-quoted identifier is case-sensitive in Vertica, so it must match exactly."""
+    create_context_table(tmp_path, "Analytics", "Events", database_type="vertica", database_folder="vdb")
+    config = FakeDatabaseConfig(True, {"Analytics": ["Events"]}, database_name="vdb")
+    config.type = "vertica"
+
+    allowed_sql = 'SELECT * FROM "Analytics"."Events"'
+    assert enforce_allow_listed_only(allowed_sql, config, tmp_path) == allowed_sql
+
+
 def test_starrocks_short_schema_resolves_to_canonical_schema(tmp_path: Path):
     create_context_table(
         tmp_path,
