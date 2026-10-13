@@ -67,7 +67,7 @@ generate_certificates() {
 	openssl req -new -nodes -newkey rsa:2048 \
 		-subj '/CN=localhost' \
 		-keyout "$CERT_DIR/server.key" -out "$CERT_DIR/server.csr" 2> /dev/null
-	printf 'subjectAltName=DNS:localhost,DNS:nao_test_vertica,IP:127.0.0.1\n' > "$CERT_DIR/san.cnf"
+	printf 'subjectAltName=DNS:localhost\n' > "$CERT_DIR/san.cnf"
 	openssl x509 -req -in "$CERT_DIR/server.csr" \
 		-CA "$CERT_DIR/ca.crt" -CAkey "$CERT_DIR/ca.key" -CAcreateserial \
 		-days 3650 -out "$CERT_DIR/server.crt" -extfile "$CERT_DIR/san.cnf" 2> /dev/null

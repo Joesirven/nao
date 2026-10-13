@@ -322,13 +322,18 @@ class TestVerticaSyncIntegration(BaseSyncIntegrationTests):
         assert "CERTIFICATE_VERIFY_FAILED" in str(excinfo.value)
 
     def test_verify_full_rejects_a_host_absent_from_the_certificate(self, db_config):
-        """verify-full checks the hostname; verify-ca against the same address does not."""
+        """verify-full checks the hostname; verify-ca against the same address does not.
+
+        127.0.0.1 is routable on every platform but absent from the certificate,
+        which names DNS:localhost only. 127.0.0.2 would need Linux's whole
+        127.0.0.0/8 loopback range, which macOS does not bind.
+        """
         if not TLS_CAFILE:
             pytest.skip("VERTICA_TLS_CAFILE not set — cannot verify the server certificate")
         if db_config.host not in ("localhost", "127.0.0.1"):
             pytest.skip("Host-mismatch check only applies to the loopback test server")
 
-        unlisted_host = "127.0.0.2"
+        unlisted_host = "127.0.0.1"
         verify_ca = db_config.model_copy(
             update={"host": unlisted_host, "tlsmode": "verify-ca", "tls_cafile": TLS_CAFILE}
         )
